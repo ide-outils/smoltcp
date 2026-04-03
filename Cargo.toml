@@ -20,14 +20,15 @@ autoexamples = false
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 [dependencies]
-managed = { version = "0.8", default-features = false, features = ["map"] }
 byteorder = { version = "1.0", default-features = false }
-log = { version = "0.4.4", default-features = false, optional = true }
+cfg-if = "1.0.0"
 libc = { version = "0.2.18", optional = true }
+managed = { version = "0.8", default-features = false, features = ["map"] }
+heapless = "0.9"
+# Optional
 bitflags = { version = "1.0", default-features = false }
 defmt = { version = "0.3.8", optional = true, features = ["ip_in_core"] }
-cfg-if = "1.0.0"
-heapless = "0.9"
+log = { version = "0.4.4", default-features = false, optional = true }
 
 [dev-dependencies]
 env_logger = "0.10"
