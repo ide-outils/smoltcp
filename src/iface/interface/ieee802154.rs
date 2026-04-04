@@ -2,11 +2,43 @@ use super::*;
 
 impl InterfaceInner {
     /// Return the next IEEE802.15.4 sequence number.
-    #[cfg(feature = "medium-ieee802154")]
     pub(super) fn next_ieee802154_seq_number(&mut self) -> u8 {
         let no = self.sequence_no;
         self.sequence_no = self.sequence_no.wrapping_add(1);
         no
+    }
+
+    pub(super) fn orchestre_frame_ieee802154<'frame, Orchestre>(
+        &mut self,
+        frame: &'frame [u8],
+        fo: Orchestre,
+    ) -> FrameOrchestreResult
+    where
+        Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
+    {
+        let ieee802154_frame = check!(Ieee802154Frame::new_checked(frame));
+
+        if ieee802154_frame.frame_type() != Ieee802154FrameType::Data {
+            return FrameOrchestreResult::Drop;
+        }
+
+        let ieee802154_repr = check!(Ieee802154Repr::parse(&ieee802154_frame));
+
+        // Drop frames when the user has set a PAN id and the PAN id from frame is not equal to this
+        // When the user didn't set a PAN id (so it is None), then we accept all PAN id's.
+        // We always accept the broadcast PAN id.
+        if self.pan_id.is_some()
+            && ieee802154_repr.dst_pan_id != self.pan_id
+            && ieee802154_repr.dst_pan_id != Some(Ieee802154Pan::BROADCAST)
+        {
+            net_debug!(
+                "IEEE802.15.4: dropping {:?} because not our PAN id (or not broadcast)",
+                ieee802154_repr
+            );
+            return FrameOrchestreResult::Drop;
+        }
+        let repr = ReprFrame::Ieee802154(ieee802154_repr);
+        fo(frame, repr)
     }
 
     pub(super) fn process_ieee802154<'output, 'payload: 'output>(

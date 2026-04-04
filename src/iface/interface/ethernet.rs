@@ -1,6 +1,40 @@
 use super::*;
 
 impl InterfaceInner {
+    pub(super) fn orchestre_frame_ethernet<'frame, Orchestre>(
+        &mut self,
+        frame: &'frame [u8],
+        fo: Orchestre,
+    ) -> FrameOrchestreResult
+    where
+        Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
+    {
+        let eth_frame = check!(EthernetFrame::new_checked(frame));
+        // Ignore any packets not directed to our hardware address or any of the multicast groups.
+        if !eth_frame.dst_addr().is_broadcast()
+            && !eth_frame.dst_addr().is_multicast()
+            && HardwareAddress::Ethernet(eth_frame.dst_addr()) != self.hardware_addr
+        {
+            return FrameOrchestreResult::Drop;
+        }
+
+        match eth_frame.ethertype() {
+            #[cfg(feature = "proto-ipv4")]
+            EthernetProtocol::Arp => self.orchestre_frame_arp(self.now, &eth_frame, fo),
+            #[cfg(feature = "proto-ipv4")]
+            EthernetProtocol::Ipv4 => {
+                let ipv4_packet = check!(Ipv4Packet::new_checked(eth_frame.payload()));
+                self.orchestre_frame_ipv4(frame, &ipv4_packet, fo)
+            }
+            #[cfg(feature = "proto-ipv6")]
+            EthernetProtocol::Ipv6 => {
+                let ipv6_packet = check!(Ipv6Packet::new_checked(eth_frame.payload()));
+                self.orchestre_frame_ipv6(frame, &ipv6_packet, fo)
+            }
+            // Drop all other traffic.
+            _ => FrameOrchestreResult::Drop,
+        }
+    }
     pub(super) fn process_ethernet<'frame>(
         &mut self,
         sockets: &mut SocketSet,

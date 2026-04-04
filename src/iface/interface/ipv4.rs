@@ -92,6 +92,25 @@ impl InterfaceInner {
         })
     }
 
+    pub(super) fn orchestre_frame_ipv4<'frame, Orchestre>(
+        &mut self,
+        frame: &'frame [u8],
+        ipv4_packet: &Ipv4Packet<&'frame [u8]>,
+        fo: Orchestre,
+    ) -> FrameOrchestreResult
+    where
+        Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
+    {
+        let ipv4_repr = check!(Ipv4Repr::parse(&ipv4_packet, &self.caps.checksum));
+        if !self.is_unicast_v4(ipv4_repr.src_addr) && !ipv4_repr.src_addr.is_unspecified() {
+            // Discard packets with non-unicast source addresses but allow unspecified
+            net_debug!("non-unicast or unspecified source address");
+            return FrameOrchestreResult::Drop;
+        }
+        let ip_repr = ReprFrame::IPv4(ipv4_repr);
+        fo(frame, ip_repr)
+    }
+
     pub(super) fn process_ipv4<'a>(
         &mut self,
         sockets: &mut SocketSet,
@@ -248,6 +267,22 @@ impl InterfaceInner {
                 };
                 self.icmpv4_reply(ipv4_repr, icmp_reply_repr)
             }
+        }
+    }
+
+    #[cfg(feature = "medium-ethernet")]
+    pub(super) fn orchestre_frame_arp<'frame>(
+        &mut self,
+        timestamp: Instant,
+        eth_frame: &EthernetFrame<&'frame [u8]>,
+        fo: Orchestre,
+    ) -> FrameOrchestreResult
+    where
+        Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
+    {
+        match self.process_arp(timestamp, eth_frame) {
+            Some(packet) => fo(frame),
+            None => FrameOrchestreResult::Drop,
         }
     }
 

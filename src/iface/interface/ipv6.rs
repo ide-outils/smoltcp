@@ -186,6 +186,72 @@ impl InterfaceInner {
         })
     }
 
+    pub(super) fn orchestre_frame_ipv6<'frame, Orchestre>(
+        &mut self,
+        frame: &'frame [u8],
+        ipv6_packet: &Ipv6Packet<&'frame [u8]>,
+        fo: Orchestre,
+    ) -> FrameOrchestreResult
+    where
+        Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
+    {
+        let ipv6_repr = check!(Ipv6Repr::parse(ipv6_packet));
+
+        if !ipv6_repr.src_addr.x_is_unicast() {
+            // Discard packets with non-unicast source addresses.
+            net_debug!("non-unicast source address");
+            return FrameOrchestreResult::Drop;
+        }
+
+        let (next_header, ip_payload) = if ipv6_repr.next_header == IpProtocol::HopByHop {
+            match self.process_hopbyhop(ipv6_repr, ipv6_packet.payload()) {
+                HopByHopResponse::Discard(optional_packet) => {
+                    return match optional_packet {
+                        Some(packet) => fo(
+                            frame,
+                            ReprFrame::IPv6 {
+                                repr: ipv6_repr,
+                                discard: Some(packet),
+                            },
+                        ),
+                        None => FrameOrchestreResult::Drop,
+                    };
+                }
+                HopByHopResponse::Continue(next) => next,
+            }
+        } else {
+            (ipv6_repr.next_header, ipv6_packet.payload())
+        };
+
+        if !self.has_ip_addr(ipv6_repr.dst_addr)
+            && !self.has_multicast_group(ipv6_repr.dst_addr)
+            && !ipv6_repr.dst_addr.is_loopback()
+        {
+            if !ipv6_repr.dst_addr.x_is_unicast() {
+                net_trace!("Rejecting IPv6 packet; {} is not a unicast address", ipv6_repr.dst_addr);
+                return FrameOrchestreResult::Drop;
+            }
+
+            if self
+                .routes
+                .lookup(&IpAddress::Ipv6(ipv6_repr.dst_addr), self.now)
+                .is_none_or(|router_addr| !self.has_ip_addr(router_addr))
+            {
+                net_trace!("Rejecting IPv6 packet; no matching routes");
+
+                return FrameOrchestreResult::Drop;
+            }
+
+            net_trace!("Rejecting IPv6 packet; no assigned address");
+            return FrameOrchestreResult::Drop;
+        }
+        let repr = ReprFrame::IPv6 {
+            repr: ipv6_repr,
+            discard: None,
+        };
+        fo(frame, repr)
+    }
+
     pub(super) fn process_ipv6<'frame>(
         &mut self,
         sockets: &mut SocketSet,

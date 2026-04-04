@@ -107,6 +107,35 @@ pub enum PollIngressSingleResult {
     SocketStateChanged,
 }
 
+/// Result returned by [`Interface::poll_frame_dispatch`].
+///
+/// This contains information on whether a packet was processed or not,
+/// and whether it might've affected socket states.
+#[derive(Debug, Default)]
+pub enum FrameOrchestreResult {
+    /// The frame was dropped
+    /// You can used it back in your queue
+    #[default]
+    Drop,
+    /// The frame has been given to the Orchestrateur
+    /// You must ensure that the frame will live until the Orchestrateur give it back.
+    Orchestre,
+}
+
+pub enum ReprFrame<'frame> {
+    #[cfg(feature = "proto-ipv4")]
+    IPv4(Ipv4Repr),
+    #[cfg(feature = "proto-ipv6")]
+    IPv6 {
+        repr: Ipv6Repr,
+        discard: Option<Packet<'frame>>,
+    },
+    #[cfg(feature = "medium-ieee802154")]
+    Ieee802154(Ieee802154Repr),
+    #[cfg(all(feature = "medium-ethernet", feature = "proto-ipv4"))]
+    Arp(Ipv4Packet<&'frame [u8]>),
+}
+
 /// A  network interface.
 ///
 /// The network interface logically owns a number of other data structures; to avoid
@@ -814,6 +843,27 @@ impl Interface {
         }
         result
     }
+
+    /// Safety : Caller must ensure that frame lives as long as the Orchestrateur use it.
+    /// The common usage is to create a create Queue that give that gives the slice to it
+    /// and doesn't modify it until the Orchestrateur gives it back.
+    fn frame_dispatch<'frame, Orchestre>(&mut self, frame: &'frame mut [u8], fo: Orchestre) -> FrameOrchestreResult
+    where
+        Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
+    {
+        if frame.is_empty() {
+            return FrameOrchestreResult::Drop;
+        }
+
+        match self.inner.caps.medium {
+            #[cfg(feature = "medium-ethernet")]
+            Medium::Ethernet => self.inner.orchestre_frame_ethernet(frame, fo),
+            #[cfg(feature = "medium-ip")]
+            Medium::Ip => self.inner.orchestre_frame_ip(frame, fo),
+            #[cfg(feature = "medium-ieee802154")]
+            Medium::Ieee802154 => self.inner.orchestre_frame_ieee802154(frame, fo),
+        }
+    }
 }
 
 impl InterfaceInner {
@@ -913,6 +963,27 @@ impl InterfaceInner {
             }
             #[allow(unreachable_patterns)]
             _ => false,
+        }
+    }
+
+    #[cfg(feature = "medium-ip")]
+    fn orchestre_frame_ip<'frame, Orchestre>(&mut self, frame: &'frame [u8], fo: Orchestre) -> FrameOrchestreResult
+    where
+        Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
+    {
+        match IpVersion::of_packet(frame) {
+            #[cfg(feature = "proto-ipv4")]
+            Ok(IpVersion::Ipv4) => {
+                let ipv4_packet = check!(Ipv4Packet::new_checked(frame));
+                self.orchestre_frame_ipv4(frame, &ipv4_packet, fo)
+            }
+            #[cfg(feature = "proto-ipv6")]
+            Ok(IpVersion::Ipv6) => {
+                let ipv6_packet = check!(Ipv6Packet::new_checked(frame));
+                self.orchestre_frame_ipv6(frame, &ipv6_packet, fo)
+            }
+            // Drop all other traffic.
+            _ => FrameOrchestreResult::Drop,
         }
     }
 
