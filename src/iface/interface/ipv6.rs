@@ -195,6 +195,7 @@ impl InterfaceInner {
     where
         Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
     {
+        // WIP : Factorise (parse_frame_ipv6)
         let ipv6_repr = check!(Ipv6Repr::parse(ipv6_packet));
 
         if !ipv6_repr.src_addr.x_is_unicast() {
@@ -203,7 +204,7 @@ impl InterfaceInner {
             return FrameOrchestreResult::Drop;
         }
 
-        let (next_header, ip_payload) = if ipv6_repr.next_header == IpProtocol::HopByHop {
+        let (_next_header, _ip_payload) = if ipv6_repr.next_header == IpProtocol::HopByHop {
             match self.process_hopbyhop(ipv6_repr, ipv6_packet.payload()) {
                 HopByHopResponse::Discard(optional_packet) => {
                     return match optional_packet {
@@ -245,6 +246,7 @@ impl InterfaceInner {
             net_trace!("Rejecting IPv6 packet; no assigned address");
             return FrameOrchestreResult::Drop;
         }
+        // EndFactorise
         let repr = ReprFrame::IPv6 {
             repr: ipv6_repr,
             discard: None,
@@ -259,6 +261,7 @@ impl InterfaceInner {
         source_hardware_addr: HardwareAddress,
         ipv6_packet: &Ipv6Packet<&'frame [u8]>,
     ) -> Option<Packet<'frame>> {
+        // WIP : Factorise (parse_frame_ipv6)
         let ipv6_repr = check!(Ipv6Repr::parse(ipv6_packet));
 
         if !ipv6_repr.src_addr.x_is_unicast() {
@@ -301,6 +304,7 @@ impl InterfaceInner {
             net_trace!("Rejecting IPv6 packet; no assigned address");
             return None;
         }
+        // EndFactorise
 
         #[cfg(feature = "socket-raw")]
         let handled_by_raw_socket = self.raw_socket_filter(sockets, &ipv6_repr.into(), ip_payload);

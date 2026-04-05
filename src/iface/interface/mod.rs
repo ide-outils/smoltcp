@@ -122,6 +122,8 @@ pub enum FrameOrchestreResult {
     Orchestre,
 }
 
+// WIP : increase sub-types' visibility
+#[expect(private_interfaces)]
 pub enum ReprFrame<'frame> {
     #[cfg(feature = "proto-ipv4")]
     IPv4(Ipv4Repr),
@@ -133,7 +135,7 @@ pub enum ReprFrame<'frame> {
     #[cfg(feature = "medium-ieee802154")]
     Ieee802154(Ieee802154Repr),
     #[cfg(all(feature = "medium-ethernet", feature = "proto-ipv4"))]
-    Arp(Ipv4Packet<&'frame [u8]>),
+    Arp(EthernetPacket<'frame>),
 }
 
 /// A  network interface.
@@ -847,7 +849,7 @@ impl Interface {
     /// Safety : Caller must ensure that frame lives as long as the Orchestrateur use it.
     /// The common usage is to create a create Queue that give that gives the slice to it
     /// and doesn't modify it until the Orchestrateur gives it back.
-    fn frame_dispatch<'frame, Orchestre>(&mut self, frame: &'frame mut [u8], fo: Orchestre) -> FrameOrchestreResult
+    pub fn frame_dispatch<'frame, Orchestre>(&mut self, frame: &'frame mut [u8], fo: Orchestre) -> FrameOrchestreResult
     where
         Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
     {

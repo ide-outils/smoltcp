@@ -9,7 +9,9 @@ impl InterfaceInner {
     where
         Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
     {
+        // WIP : Factorise (parse_frame_ethernet)
         let eth_frame = check!(EthernetFrame::new_checked(frame));
+
         // Ignore any packets not directed to our hardware address or any of the multicast groups.
         if !eth_frame.dst_addr().is_broadcast()
             && !eth_frame.dst_addr().is_multicast()
@@ -17,10 +19,11 @@ impl InterfaceInner {
         {
             return FrameOrchestreResult::Drop;
         }
+        // EndFactorise
 
         match eth_frame.ethertype() {
             #[cfg(feature = "proto-ipv4")]
-            EthernetProtocol::Arp => self.orchestre_frame_arp(self.now, &eth_frame, fo),
+            EthernetProtocol::Arp => self.orchestre_frame_arp(frame, self.now, &eth_frame, fo),
             #[cfg(feature = "proto-ipv4")]
             EthernetProtocol::Ipv4 => {
                 let ipv4_packet = check!(Ipv4Packet::new_checked(eth_frame.payload()));
@@ -42,6 +45,7 @@ impl InterfaceInner {
         frame: &'frame [u8],
         fragments: &'frame mut FragmentsBuffer,
     ) -> Option<EthernetPacket<'frame>> {
+        // WIP : Factorise (parse_frame_ethernet)
         let eth_frame = check!(EthernetFrame::new_checked(frame));
 
         // Ignore any packets not directed to our hardware address or any of the multicast groups.
@@ -51,6 +55,7 @@ impl InterfaceInner {
         {
             return None;
         }
+        // EndFactorise
 
         match eth_frame.ethertype() {
             #[cfg(feature = "proto-ipv4")]

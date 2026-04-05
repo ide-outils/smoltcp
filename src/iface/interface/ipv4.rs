@@ -101,12 +101,14 @@ impl InterfaceInner {
     where
         Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
     {
+        // WIP : Factorise (parse_frame_ipv4)
         let ipv4_repr = check!(Ipv4Repr::parse(&ipv4_packet, &self.caps.checksum));
         if !self.is_unicast_v4(ipv4_repr.src_addr) && !ipv4_repr.src_addr.is_unspecified() {
             // Discard packets with non-unicast source addresses but allow unspecified
             net_debug!("non-unicast or unspecified source address");
             return FrameOrchestreResult::Drop;
         }
+        // EndFactorise
         let ip_repr = ReprFrame::IPv4(ipv4_repr);
         fo(frame, ip_repr)
     }
@@ -119,12 +121,14 @@ impl InterfaceInner {
         ipv4_packet: &Ipv4Packet<&'a [u8]>,
         frag: &'a mut FragmentsBuffer,
     ) -> Option<Packet<'a>> {
+        // WIP : Factorise (parse_frame_ipv4)
         let mut ipv4_repr = check!(Ipv4Repr::parse(ipv4_packet, &self.caps.checksum));
         if !self.is_unicast_v4(ipv4_repr.src_addr) && !ipv4_repr.src_addr.is_unspecified() {
             // Discard packets with non-unicast source addresses but allow unspecified
             net_debug!("non-unicast or unspecified source address");
             return None;
         }
+        // EndFactorise
 
         #[cfg(feature = "proto-ipv4-fragmentation")]
         let ip_payload = {
@@ -271,8 +275,9 @@ impl InterfaceInner {
     }
 
     #[cfg(feature = "medium-ethernet")]
-    pub(super) fn orchestre_frame_arp<'frame>(
+    pub(super) fn orchestre_frame_arp<'frame, Orchestre>(
         &mut self,
+        frame: &'frame [u8],
         timestamp: Instant,
         eth_frame: &EthernetFrame<&'frame [u8]>,
         fo: Orchestre,
@@ -281,8 +286,8 @@ impl InterfaceInner {
         Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
     {
         match self.process_arp(timestamp, eth_frame) {
-            Some(packet) => fo(frame),
             None => FrameOrchestreResult::Drop,
+            Some(packet) => fo(frame, ReprFrame::Arp(packet)),
         }
     }
 
