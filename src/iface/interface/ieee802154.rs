@@ -16,27 +16,9 @@ impl InterfaceInner {
     where
         Orchestre: Fn(&'frame [u8], ReprFrame<'frame>) -> FrameOrchestreResult,
     {
-        let ieee802154_frame = check!(Ieee802154Frame::new_checked(frame));
-
-        if ieee802154_frame.frame_type() != Ieee802154FrameType::Data {
+        let Some((ieee802154_repr, _)) = self.parse_frame_ieee802154(frame) else {
             return FrameOrchestreResult::Drop;
-        }
-
-        let ieee802154_repr = check!(Ieee802154Repr::parse(&ieee802154_frame));
-
-        // Drop frames when the user has set a PAN id and the PAN id from frame is not equal to this
-        // When the user didn't set a PAN id (so it is None), then we accept all PAN id's.
-        // We always accept the broadcast PAN id.
-        if self.pan_id.is_some()
-            && ieee802154_repr.dst_pan_id != self.pan_id
-            && ieee802154_repr.dst_pan_id != Some(Ieee802154Pan::BROADCAST)
-        {
-            net_debug!(
-                "IEEE802.15.4: dropping {:?} because not our PAN id (or not broadcast)",
-                ieee802154_repr
-            );
-            return FrameOrchestreResult::Drop;
-        }
+        };
         let repr = ReprFrame::Ieee802154(ieee802154_repr);
         fo(frame, repr)
     }
@@ -48,7 +30,18 @@ impl InterfaceInner {
         sixlowpan_payload: &'payload [u8],
         _fragments: &'output mut FragmentsBuffer,
     ) -> Option<Packet<'output>> {
-        let ieee802154_frame = check!(Ieee802154Frame::new_checked(sixlowpan_payload));
+        let (repr, frame) = self.parse_frame_ieee802154(sixlowpan_payload)?;
+        match frame.payload() {
+            Some(payload) => self.process_sixlowpan(sockets, meta, &repr, payload, _fragments),
+            None => None,
+        }
+    }
+
+    fn parse_frame_ieee802154<'frame>(
+        &mut self,
+        frame: &'frame [u8],
+    ) -> Option<(Ieee802154Repr, Ieee802154Frame<&'frame [u8]>)> {
+        let ieee802154_frame = check!(Ieee802154Frame::new_checked(frame));
 
         if ieee802154_frame.frame_type() != Ieee802154FrameType::Data {
             return None;
@@ -69,13 +62,7 @@ impl InterfaceInner {
             );
             return None;
         }
-
-        match ieee802154_frame.payload() {
-            Some(payload) => {
-                self.process_sixlowpan(sockets, meta, &ieee802154_repr, payload, _fragments)
-            }
-            None => None,
-        }
+        Some((ieee802154_repr, ieee802154_frame))
     }
 
     pub(super) fn dispatch_ieee802154<Tx: TxToken>(
